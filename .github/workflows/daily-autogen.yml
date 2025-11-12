@@ -1,0 +1,53 @@
+name: Auto Generate Daily Post
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 09:00 UTC (adjust if needed)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps (pip)
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Run generator
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python auto_generate.py
+
+      - name: Commit posts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "AutoPublisher"
+          git config user.email "auto@users.noreply.github.com"
+          # push using token
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}
+          git add _posts || true
+          if git diff --cached --quiet; then
+            echo "No new posts"
+          else
+            git commit -m "📰 Auto post $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+      - name: Ping Google sitemap
+        run: |
+          curl -s "https://www.google.com/ping?sitemap=https://esportsai.io/sitemap.xml" || true
